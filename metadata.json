@@ -1,0 +1,10 @@
+{
+  "name": "Karnataka RTO Document Management System",
+  "description": "Secure document, showroom, vehicle, exchange, and RTO case management platform for Karnataka RTO agents.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
