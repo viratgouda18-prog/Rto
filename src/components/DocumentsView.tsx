@@ -27,6 +27,7 @@ import {
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
 import { DocumentViewerModal } from './DocumentViewerModal.tsx';
 import { exportToCSV, exportToPDF } from '../utils/exporter.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const DocumentsView: React.FC = () => {
   const { t, showToast, searchQuery, confirm } = useApp();
@@ -69,17 +70,18 @@ export const DocumentsView: React.FC = () => {
   const fetchDocs = async () => {
     setLoading(true);
     try {
-      const [dRes, vRes, sRes] = await Promise.all([
-        fetch(`/api/documents?docType=${docTypeFilter}`),
-        fetch('/api/vehicles'),
-        fetch('/api/showrooms'),
+      const [docs, vehicles, showrooms] = await Promise.all([
+        fetchJson<any[]>(`/api/documents?docType=${docTypeFilter}`, { fallback: [] }),
+        fetchJson<any[]>('/api/vehicles', { fallback: [] }),
+        fetchJson<any[]>('/api/showrooms', { fallback: [] }),
       ]);
 
-      if (dRes.ok) setDocuments(await dRes.json());
-      if (vRes.ok) setTractors(await vRes.json());
-      if (sRes.ok) setShowrooms(await sRes.json());
+      setDocuments(docs || []);
+      setTractors(vehicles || []);
+      setShowrooms(showrooms || []);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('DocumentsView fetch error:', err);
+      showToast(err.message || 'Unable to sync documents at this moment', 'error');
     } finally {
       setLoading(false);
     }
@@ -127,19 +129,18 @@ export const DocumentsView: React.FC = () => {
         notes: notes.trim(),
       };
 
-      const res = await fetch('/api/documents', {
+      await fetchJson('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Failed to upload document');
       showToast('Document securely added to cabinet', 'success');
       setShowUploadModal(false);
       resetUploadForm();
       fetchDocs();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to upload document', 'error');
     } finally {
       setUploading(false);
     }
@@ -159,12 +160,10 @@ export const DocumentsView: React.FC = () => {
   // Open Full Document in rich viewer
   const openViewDoc = async (id: number) => {
     try {
-      const res = await fetch(`/api/documents/${id}`);
-      if (!res.ok) throw new Error('Failed to load document content');
-      const doc = await res.json();
+      const doc = await fetchJson<any>(`/api/documents/${id}`);
       setViewingDoc(doc);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to load document content', 'error');
     }
   };
 
@@ -182,7 +181,7 @@ export const DocumentsView: React.FC = () => {
     if (!editingDoc) return;
     setSavingEdit(true);
     try {
-      const res = await fetch(`/api/documents/${editingDoc.id}`, {
+      const updated = await fetchJson<any>(`/api/documents/${editingDoc.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -194,8 +193,6 @@ export const DocumentsView: React.FC = () => {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to update document metadata');
-      const updated = await res.json();
       showToast('Document metadata updated', 'success');
       setEditingDoc(null);
       fetchDocs();
@@ -203,7 +200,7 @@ export const DocumentsView: React.FC = () => {
         setViewingDoc({ ...viewingDoc, ...updated });
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to update document metadata', 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -216,8 +213,7 @@ export const DocumentsView: React.FC = () => {
       confirmText: 'Delete Document',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete document');
+        await fetchJson(`/api/documents/${id}`, { method: 'DELETE' });
         showToast('Document removed', 'info');
         fetchDocs();
         if (viewingDoc?.id === id) setViewingDoc(null);

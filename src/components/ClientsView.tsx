@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { isValidIndianMobile, maskAadhaar } from '../utils/validators.ts';
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const ClientsView: React.FC = () => {
   const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
@@ -51,17 +52,16 @@ export const ClientsView: React.FC = () => {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/clients?status=${statusFilter}`);
-      if (!res.ok) throw new Error('Failed to fetch clients');
-      const data = await res.json();
-      setClients(data);
+      const data = await fetchJson<any[]>(`/api/clients?status=${statusFilter}`, { fallback: [] });
+      setClients(data || []);
 
       if (selectedEntityForView && selectedEntityForView.type === 'client') {
         fetchClientProfile(selectedEntityForView.id);
         setSelectedEntityForView(null);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchClients error:', err);
+      showToast(err.message || 'Failed to fetch clients', 'error');
     } finally {
       setLoading(false);
     }
@@ -69,17 +69,15 @@ export const ClientsView: React.FC = () => {
 
   const fetchClientProfile = async (id: number | string) => {
     try {
-      const res = await fetch(`/api/clients/${id}`);
-      if (!res.ok) throw new Error('Failed to fetch client profile');
-      const data = await res.json();
+      const data = await fetchJson<any>(`/api/clients/${id}`);
       setViewingProfile(data);
-      if (data.documents && Array.isArray(data.documents)) {
+      if (data?.documents && Array.isArray(data.documents)) {
         setClientSelectedDocIds(data.documents.map((d: any) => d.id));
       } else {
         setClientSelectedDocIds([]);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to fetch client profile', 'error');
     }
   };
 
@@ -185,23 +183,20 @@ export const ClientsView: React.FC = () => {
       const url = editingClient ? `/api/clients/${editingClient.id}` : '/api/clients';
       const method = editingClient ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await fetchJson<any>(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save client');
-
       showToast(editingClient ? 'Client updated successfully' : 'Client created successfully', 'success');
       setShowModal(false);
       fetchClients();
-      if (viewingProfile && viewingProfile.id === (editingClient?.id || data.id)) {
-        fetchClientProfile(editingClient?.id || data.id);
+      if (viewingProfile && viewingProfile.id === (editingClient?.id || data?.id)) {
+        fetchClientProfile(editingClient?.id || data?.id);
       }
     } catch (err: any) {
-      setFormError(err.message);
+      setFormError(err.message || 'Failed to save client');
     } finally {
       setSaving(false);
     }
@@ -214,8 +209,7 @@ export const ClientsView: React.FC = () => {
       confirmText: 'Delete Record',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to archive client');
+        await fetchJson(`/api/clients/${id}`, { method: 'DELETE' });
         showToast('Client record archived', 'info');
         fetchClients();
         if (viewingProfile?.id === id) setViewingProfile(null);

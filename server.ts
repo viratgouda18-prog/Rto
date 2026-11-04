@@ -19,6 +19,11 @@ async function startServer() {
   // Mount API routes
   app.use('/api', apiRouter);
 
+  // Catch-all for unmatched /api routes to prevent HTML fallthrough
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'API route not found' });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -36,6 +41,14 @@ async function startServer() {
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
+
+  // Global Express error handler ensuring JSON responses
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Unhandled server error:', err);
+    if (!res.headersSent) {
+      res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+  });
 
   app.listen(port, '0.0.0.0', () => {
     console.log(`Karnataka RTO Document Management Server listening on port ${port}`);

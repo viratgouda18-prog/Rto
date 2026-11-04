@@ -14,6 +14,7 @@ import {
   Info,
 } from 'lucide-react';
 import { formatKarnatakaRegNumber } from '../utils/validators.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const OCRScannerView: React.FC = () => {
   const { t, showToast, setActiveTab } = useApp();
@@ -64,17 +65,14 @@ export const OCRScannerView: React.FC = () => {
     setUserConfirmedVerified(false);
 
     try {
-      const res = await fetch('/api/ocr', {
+      const data = await fetchJson<any>('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileData, docType }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'OCR Extraction failed');
-
       setScanResult(data);
-      const ext = data.extractedData || {};
+      const ext = data?.extractedData || {};
 
       // Populate review fields
       setRegistrationNumber(formatKarnatakaRegNumber(ext.registrationNumber || ''));
@@ -90,7 +88,7 @@ export const OCRScannerView: React.FC = () => {
 
       showToast('OCR extracted fields successfully. Please review before saving.', 'info');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'OCR Extraction failed', 'error');
     } finally {
       setScanning(false);
     }
@@ -109,7 +107,7 @@ export const OCRScannerView: React.FC = () => {
     setSavingRecord(true);
     try {
       // 1. Create verified vehicle
-      const vRes = await fetch('/api/vehicles', {
+      const newVehicle = await fetchJson<any>('/api/vehicles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,11 +128,8 @@ export const OCRScannerView: React.FC = () => {
         }),
       });
 
-      const newVehicle = await vRes.json();
-      if (!vRes.ok) throw new Error(newVehicle.error || 'Failed to create vehicle record');
-
       // 2. Attach scanned document to the vehicle with ocrVerified = true
-      await fetch('/api/documents', {
+      await fetchJson('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

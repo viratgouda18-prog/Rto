@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
 import { DocumentViewerModal } from './DocumentViewerModal.tsx';
+import { fetchJson } from '../utils/apiClient.ts';
 
 interface VehicleRecord {
   id: number;
@@ -140,13 +141,10 @@ export const TractorsView: React.FC = () => {
   const fetchTractors = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/vehicles?isTractor=true');
-      if (res.ok) {
-        const data = await res.json();
-        setTractors(data);
-      }
+      const data = await fetchJson<any[]>('/api/vehicles?isTractor=true', { fallback: [] });
+      setTractors(data || []);
     } catch (err) {
-      console.error(err);
+      console.warn('fetchTractors error:', err);
       showToast('Failed to load tractor records', 'error');
     } finally {
       setLoading(false);
@@ -155,14 +153,14 @@ export const TractorsView: React.FC = () => {
 
   const fetchAuxData = async () => {
     try {
-      const [cRes, sRes] = await Promise.all([
-        fetch('/api/clients'),
-        fetch('/api/showrooms'),
+      const [clientsData, showroomsData] = await Promise.all([
+        fetchJson<any[]>('/api/clients', { fallback: [] }),
+        fetchJson<any[]>('/api/showrooms', { fallback: [] }),
       ]);
-      if (cRes.ok) setClients(await cRes.json());
-      if (sRes.ok) setShowrooms(await sRes.json());
+      setClients(clientsData || []);
+      setShowrooms(showroomsData || []);
     } catch (err) {
-      console.error(err);
+      console.warn('fetchAuxData error:', err);
     }
   };
 
@@ -174,16 +172,15 @@ export const TractorsView: React.FC = () => {
   const fetchTractorDetails = async (id: number) => {
     try {
       setLoadingDocs(true);
-      const res = await fetch(`/api/vehicles/${id}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchJson<any>(`/api/vehicles/${id}`);
+      if (data) {
         setSelectedTractor(data);
         const docs = data.documents || [];
         setTractorDocs(docs);
         setTractorSelectedDocIds(docs.map((d: any) => d.id));
       }
     } catch (err) {
-      console.error(err);
+      console.warn('fetchTractorDetails error:', err);
     } finally {
       setLoadingDocs(false);
     }
@@ -304,8 +301,7 @@ export const TractorsView: React.FC = () => {
       confirmText: 'Delete Tractor',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/vehicles/${tr.id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete tractor record');
+        await fetchJson(`/api/vehicles/${tr.id}`, { method: 'DELETE' });
         showToast(`Tractor ${tr.vehicleId} deleted successfully`, 'success');
         fetchTractors();
         if (selectedTractor?.id === tr.id) {
@@ -318,14 +314,13 @@ export const TractorsView: React.FC = () => {
 
   const handleDeleteVaultDoc = async (docId: number) => {
     try {
-      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete document');
+      await fetchJson(`/api/documents/${docId}`, { method: 'DELETE' });
       showToast('Document deleted successfully', 'success');
       if (selectedTractor) {
         fetchTractorDetails(selectedTractor.id);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to delete document', 'error');
     }
   };
 
@@ -370,29 +365,24 @@ export const TractorsView: React.FC = () => {
       const url = editingTractor ? `/api/vehicles/${editingTractor.id}` : '/api/vehicles';
       const method = editingTractor ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      await fetchJson(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        showToast(
-          editingTractor
-            ? `Tractor record ${editingTractor.vehicleId} updated successfully`
-            : 'Tractor record created successfully',
-          'success'
-        );
-        setShowAddModal(false);
-        resetForm();
-        fetchTractors();
-      } else {
-        const data = await res.json();
-        showToast(data.error || 'Failed to save tractor record', 'error');
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Network error saving tractor', 'error');
+      showToast(
+        editingTractor
+          ? `Tractor record ${editingTractor.vehicleId} updated successfully`
+          : 'Tractor record created successfully',
+        'success'
+      );
+      setShowAddModal(false);
+      resetForm();
+      fetchTractors();
+    } catch (err: any) {
+      console.warn('handleAddTractor error:', err);
+      showToast(err.message || 'Failed to save tractor record', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -409,37 +399,38 @@ export const TractorsView: React.FC = () => {
       setUploadingDoc(true);
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64Data = (reader.result as string).split(',')[1];
-        const payload = {
-          vehicleId: selectedTractor.id,
-          clientId: selectedTractor.clientId,
-          title: docTitle.trim() || `${docType.toUpperCase()} - ${selectedTractor.manufacturer} ${selectedTractor.model}`,
-          docType,
-          fileName: docFile.name,
-          fileType: docFile.type,
-          fileSize: docFile.size,
-          fileDataBase64: base64Data,
-        };
+        try {
+          const base64Data = (reader.result as string).split(',')[1];
+          const payload = {
+            vehicleId: selectedTractor.id,
+            clientId: selectedTractor.clientId,
+            title: docTitle.trim() || `${docType.toUpperCase()} - ${selectedTractor.manufacturer} ${selectedTractor.model}`,
+            docType,
+            fileName: docFile.name,
+            fileType: docFile.type,
+            fileSize: docFile.size,
+            fileDataBase64: base64Data,
+          };
 
-        const res = await fetch('/api/documents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+          await fetchJson('/api/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
 
-        if (res.ok) {
           showToast('Tractor document uploaded securely', 'success');
           setShowDocUploadModal(false);
           fetchTractorDetails(selectedTractor.id);
-        } else {
-          showToast('Failed to upload tractor document', 'error');
+        } catch (uploadErr: any) {
+          showToast(uploadErr.message || 'Failed to upload tractor document', 'error');
+        } finally {
+          setUploadingDoc(false);
         }
-        setUploadingDoc(false);
       };
       reader.readAsDataURL(docFile);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showToast('Error uploading file', 'error');
+      showToast(err.message || 'Error uploading file', 'error');
       setUploadingDoc(false);
     }
   };

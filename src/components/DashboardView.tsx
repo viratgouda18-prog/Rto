@@ -17,6 +17,7 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { getExpiryStatus } from '../utils/validators.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const DashboardView: React.FC = () => {
   const { t, setActiveTab, setSelectedEntityForView } = useApp();
@@ -42,21 +43,19 @@ export const DashboardView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchStats = async (retries = 2) => {
+  const fetchStats = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/stats');
-      if (!res.ok) throw new Error('Failed to load dashboard metrics');
-      const data = await res.json();
+      const data = await fetchJson<any>('/api/stats', {
+        retries: 2,
+        retryDelayMs: 1000,
+        fallback: defaultStats,
+      });
       setStats(data || defaultStats);
     } catch (err: any) {
-      if (retries > 0) {
-        setTimeout(() => fetchStats(retries - 1), 1200);
-        return;
-      }
+      console.warn('Dashboard stats fallback applied:', err);
       setError('Unable to synchronize latest metrics at this moment.');
-      // Keep previous or default stats intact so UI remains interactive
       setStats((prev: any) => prev || defaultStats);
     } finally {
       setLoading(false);
@@ -137,7 +136,7 @@ export const DashboardView: React.FC = () => {
             <span>{error}</span>
           </div>
           <button
-            onClick={() => fetchStats(0)}
+            onClick={() => fetchStats()}
             className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" />

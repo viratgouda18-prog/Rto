@@ -27,6 +27,7 @@ import { RTO_SERVICES } from '../utils/checklists.ts';
 import { KARNATAKA_RTO_OFFICES } from '../utils/karnatakaRTO.ts';
 import { DocumentViewerModal } from './DocumentViewerModal.tsx';
 import { exportToCSV, exportToPDF } from '../utils/exporter.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const RTOCasesView: React.FC = () => {
   const { t, showToast, searchQuery, lang, confirm } = useApp();
@@ -61,17 +62,18 @@ export const RTOCasesView: React.FC = () => {
   const fetchCasesData = async () => {
     setLoading(true);
     try {
-      const [casesRes, tractorsRes, showroomsRes] = await Promise.all([
-        fetch(`/api/rto-cases?status=${statusFilter}&serviceType=${serviceFilter}`),
-        fetch('/api/vehicles'),
-        fetch('/api/showrooms'),
+      const [casesList, tractorsList, showroomsList] = await Promise.all([
+        fetchJson<any[]>(`/api/rto-cases?status=${statusFilter}&serviceType=${serviceFilter}`, { fallback: [] }),
+        fetchJson<any[]>('/api/vehicles', { fallback: [] }),
+        fetchJson<any[]>('/api/showrooms', { fallback: [] }),
       ]);
 
-      if (casesRes.ok) setCases(await casesRes.json());
-      if (tractorsRes.ok) setTractors(await tractorsRes.json());
-      if (showroomsRes.ok) setShowrooms(await showroomsRes.json());
+      setCases(casesList || []);
+      setTractors(tractorsList || []);
+      setShowrooms(showroomsList || []);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('RTOCasesView fetch error:', err);
+      showToast(err.message || 'Unable to sync RTO cases at this moment', 'error');
     } finally {
       setLoading(false);
     }
@@ -121,8 +123,7 @@ export const RTOCasesView: React.FC = () => {
       confirmText: 'Delete Case',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/rto-cases/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete RTO case');
+        await fetchJson(`/api/rto-cases/${id}`, { method: 'DELETE' });
         showToast('RTO Case deleted permanently', 'info');
         if (activeCaseDetail?.id === id) setActiveCaseDetail(null);
         fetchCasesData();
@@ -159,14 +160,11 @@ export const RTOCasesView: React.FC = () => {
       const url = editingCase ? `/api/rto-cases/${editingCase.id}` : '/api/rto-cases';
       const method = editingCase ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await fetchJson<any>(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save RTO case');
 
       showToast(
         editingCase
@@ -181,7 +179,7 @@ export const RTOCasesView: React.FC = () => {
         setActiveCaseDetail((prev: any) => ({ ...prev, ...payload }));
       }
     } catch (err: any) {
-      setFormError(err.message);
+      setFormError(err.message || 'Failed to save RTO case');
     } finally {
       setSaving(false);
     }
@@ -190,13 +188,12 @@ export const RTOCasesView: React.FC = () => {
   // Toggle checklist item completion
   const handleToggleChecklist = async (itemId: number, currentCompleted: boolean) => {
     try {
-      const res = await fetch(`/api/case-checklists/${itemId}/toggle`, {
+      await fetchJson(`/api/case-checklists/${itemId}/toggle`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isCompleted: !currentCompleted, verifiedBy: 'Agent Official' }),
       });
 
-      if (!res.ok) throw new Error('Failed to toggle checklist item');
       showToast(!currentCompleted ? 'Document verified' : 'Document marked unverified', 'info');
       fetchCasesData();
 
@@ -210,7 +207,7 @@ export const RTOCasesView: React.FC = () => {
         }));
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to toggle checklist item', 'error');
     }
   };
 
@@ -220,7 +217,7 @@ export const RTOCasesView: React.FC = () => {
     if (!activeCaseDetail || !customItemLabel.trim()) return;
 
     try {
-      const res = await fetch(`/api/case-checklists/${activeCaseDetail.id}/custom`, {
+      const newItem = await fetchJson<any>(`/api/case-checklists/${activeCaseDetail.id}/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,8 +227,6 @@ export const RTOCasesView: React.FC = () => {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to add custom checklist item');
-      const newItem = await res.json();
       showToast('Custom document requirement added to checklist', 'success');
       setCustomItemLabel('');
       setCustomItemLabelKn('');
@@ -241,27 +236,26 @@ export const RTOCasesView: React.FC = () => {
       }));
       fetchCasesData();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to add custom checklist item', 'error');
     }
   };
 
   // Update case status
   const handleStatusChange = async (caseId: number, newStatus: string) => {
     try {
-      const res = await fetch(`/api/rto-cases/${caseId}`, {
+      await fetchJson(`/api/rto-cases/${caseId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (!res.ok) throw new Error('Failed to update case status');
       showToast(`Case status updated to ${newStatus}`, 'success');
       fetchCasesData();
       if (activeCaseDetail && activeCaseDetail.id === caseId) {
         setActiveCaseDetail((prev: any) => ({ ...prev, status: newStatus }));
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to update case status', 'error');
     }
   };
 

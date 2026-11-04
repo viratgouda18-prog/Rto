@@ -23,6 +23,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { RTO_SERVICES } from '../utils/checklists.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 import { exportAuditLogsAsCsv } from '../utils/zipDownloader.ts';
 
 interface StaffPersona {
@@ -57,11 +58,11 @@ export const AdminAuditView: React.FC = () => {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/audit-logs?limit=250');
-      if (!res.ok) throw new Error('Failed to load audit logs');
-      setLogs(await res.json());
+      const logsData = await fetchJson<any[]>('/api/audit-logs?limit=250', { fallback: [] });
+      setLogs(logsData || []);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchLogs error:', err);
+      showToast(err.message || 'Failed to load audit logs', 'error');
     } finally {
       setLoading(false);
     }
@@ -74,7 +75,7 @@ export const AdminAuditView: React.FC = () => {
   const handleSimulateLogin = async (staff: StaffPersona) => {
     setLoggingIn(true);
     try {
-      const res = await fetch('/api/auth/login', {
+      await fetchJson('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -84,14 +85,12 @@ export const AdminAuditView: React.FC = () => {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to process login');
-      const data = await res.json();
       setCurrentStaff(staff);
       setShowLoginModal(false);
       showToast(`Logged in as ${staff.name} (${staff.role}). Audit log recorded!`, 'success');
       fetchLogs();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to process login', 'error');
     } finally {
       setLoggingIn(false);
     }
@@ -114,9 +113,7 @@ export const AdminAuditView: React.FC = () => {
   const handleExportBackup = async () => {
     setExportingBackup(true);
     try {
-      const res = await fetch('/api/backup');
-      if (!res.ok) throw new Error('Failed to create database backup');
-      const data = await res.json();
+      const data = await fetchJson<any>('/api/backup');
 
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);

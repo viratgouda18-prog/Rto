@@ -1353,6 +1353,42 @@ api.put('/case-checklists/:id/toggle', async (req: Request, res: Response) => {
   }
 });
 
+// Also support POST for checklist toggle
+api.post('/case-checklists/:id/toggle', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { isCompleted, verifiedBy } = req.body;
+
+    const [item] = await db.select().from(schema.caseChecklists).where(eq(schema.caseChecklists.id, id));
+    if (!item) return res.status(404).json({ error: 'Checklist item not found' });
+
+    const newCompleted = isCompleted !== undefined ? isCompleted : !item.isCompleted;
+    const verifier = (verifiedBy || 'RTO Agent').trim();
+
+    const [updated] = await db
+      .update(schema.caseChecklists)
+      .set({
+        isCompleted: newCompleted,
+        verifiedBy: newCompleted ? verifier : '',
+        verifiedAt: newCompleted ? new Date() : null,
+      })
+      .where(eq(schema.caseChecklists.id, id))
+      .returning();
+
+    await logAudit(
+      'status_change',
+      'case_checklist',
+      `CASE-${item.caseId}`,
+      `Checklist item "${item.itemLabel}" marked as ${newCompleted ? 'VERIFIED' : 'UNVERIFIED'}`,
+      verifier
+    );
+
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update checklist item' });
+  }
+});
+
 api.post('/case-checklists/:caseId/custom', async (req: Request, res: Response) => {
   try {
     const caseId = parseInt(req.params.caseId, 10);

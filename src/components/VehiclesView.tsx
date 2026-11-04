@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { getExpiryStatus, formatKarnatakaRegNumber } from '../utils/validators.ts';
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const VehiclesView: React.FC = () => {
   const { t, showToast, searchQuery, setActiveTab, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
@@ -73,22 +74,23 @@ export const VehiclesView: React.FC = () => {
   const fetchVehicles = async () => {
     setLoading(true);
     try {
-      const [vRes, cRes, sRes] = await Promise.all([
-        fetch(`/api/vehicles?category=${categoryFilter}`),
-        fetch('/api/clients?status=active'),
-        fetch('/api/showrooms'),
+      const [vehiclesList, clientsList, showroomsList] = await Promise.all([
+        fetchJson<any[]>(`/api/vehicles?category=${categoryFilter}`, { fallback: [] }),
+        fetchJson<any[]>('/api/clients?status=active', { fallback: [] }),
+        fetchJson<any[]>('/api/showrooms', { fallback: [] }),
       ]);
 
-      if (vRes.ok) setVehicles(await vRes.json());
-      if (cRes.ok) setClients(await cRes.json());
-      if (sRes.ok) setShowrooms(await sRes.json());
+      setVehicles(vehiclesList || []);
+      setClients(clientsList || []);
+      setShowrooms(showroomsList || []);
 
       if (selectedEntityForView && selectedEntityForView.type === 'vehicle') {
         openVehicleDetail(selectedEntityForView.id);
         setSelectedEntityForView(null);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchVehicles error:', err);
+      showToast(err.message || 'Unable to sync vehicles at this moment', 'error');
     } finally {
       setLoading(false);
     }
@@ -96,17 +98,15 @@ export const VehiclesView: React.FC = () => {
 
   const openVehicleDetail = async (id: number | string) => {
     try {
-      const res = await fetch(`/api/vehicles/${id}`);
-      if (!res.ok) throw new Error('Failed to load vehicle details');
-      const data = await res.json();
+      const data = await fetchJson<any>(`/api/vehicles/${id}`);
       setViewingVehicleDetail(data);
-      if (data.documents && Array.isArray(data.documents)) {
+      if (data?.documents && Array.isArray(data.documents)) {
         setVehSelectedDocIds(data.documents.map((d: any) => d.id));
       } else {
         setVehSelectedDocIds([]);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to load vehicle details', 'error');
     }
   };
 
@@ -260,23 +260,20 @@ export const VehiclesView: React.FC = () => {
       const url = editingVehicle ? `/api/vehicles/${editingVehicle.id}` : '/api/vehicles';
       const method = editingVehicle ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await fetchJson<any>(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save vehicle');
-
       showToast(editingVehicle ? 'Vehicle updated successfully' : 'Vehicle added successfully', 'success');
       setShowModal(false);
       fetchVehicles();
-      if (viewingVehicleDetail?.id === (editingVehicle?.id || data.id)) {
-        openVehicleDetail(editingVehicle?.id || data.id);
+      if (viewingVehicleDetail?.id === (editingVehicle?.id || data?.id)) {
+        openVehicleDetail(editingVehicle?.id || data?.id);
       }
     } catch (err: any) {
-      setFormError(err.message);
+      setFormError(err.message || 'Failed to save vehicle');
     } finally {
       setSaving(false);
     }
@@ -289,8 +286,7 @@ export const VehiclesView: React.FC = () => {
       confirmText: 'Delete Record',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to archive vehicle');
+        await fetchJson(`/api/vehicles/${id}`, { method: 'DELETE' });
         showToast('Record deleted/archived', 'info');
         fetchVehicles();
         if (viewingVehicleDetail?.id === id) setViewingVehicleDetail(null);
@@ -308,7 +304,7 @@ export const VehiclesView: React.FC = () => {
 
     setUploadingDoc(true);
     try {
-      const res = await fetch('/api/documents', {
+      await fetchJson('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,7 +319,6 @@ export const VehiclesView: React.FC = () => {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to upload document');
       showToast('Document securely uploaded to vehicle file vault', 'success');
       setUploadDocModalVehicle(null);
       setUploadFileData('');

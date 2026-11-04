@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getExpiryStatus } from '../utils/validators.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const RemindersView: React.FC = () => {
   const { t, showToast, confirm } = useApp();
@@ -38,15 +39,16 @@ export const RemindersView: React.FC = () => {
   const fetchReminders = async () => {
     setLoading(true);
     try {
-      const [rRes, vRes] = await Promise.all([
-        fetch('/api/reminders'),
-        fetch('/api/vehicles'),
+      const [remindersList, tractorsList] = await Promise.all([
+        fetchJson<any[]>('/api/reminders', { fallback: [] }),
+        fetchJson<any[]>('/api/vehicles', { fallback: [] }),
       ]);
 
-      if (rRes.ok) setReminders(await rRes.json());
-      if (vRes.ok) setTractors(await vRes.json());
+      setReminders(remindersList || []);
+      setTractors(tractorsList || []);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchReminders error:', err);
+      showToast(err.message || 'Unable to sync reminders at this moment', 'error');
     } finally {
       setLoading(false);
     }
@@ -105,19 +107,18 @@ export const RemindersView: React.FC = () => {
       const url = editingReminder ? `/api/reminders/${editingReminder.id}` : '/api/reminders';
       const method = editingReminder ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      await fetchJson(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Failed to save reminder');
       showToast(editingReminder ? 'Reminder updated' : 'Reminder alert configured', 'success');
       setShowModal(false);
       setEditingReminder(null);
       fetchReminders();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to save reminder', 'error');
     } finally {
       setSaving(false);
     }
@@ -130,8 +131,7 @@ export const RemindersView: React.FC = () => {
       confirmText: 'Delete Reminder',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete reminder');
+        await fetchJson(`/api/reminders/${id}`, { method: 'DELETE' });
         showToast('Reminder deleted', 'info');
         fetchReminders();
       },
@@ -140,12 +140,11 @@ export const RemindersView: React.FC = () => {
 
   const handleDismiss = async (id: number) => {
     try {
-      const res = await fetch(`/api/reminders/${id}/dismiss`, { method: 'PUT' });
-      if (!res.ok) throw new Error('Failed to dismiss reminder');
+      await fetchJson(`/api/reminders/${id}/dismiss`, { method: 'PUT' });
       showToast('Reminder dismissed', 'info');
       fetchReminders();
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to dismiss reminder', 'error');
     }
   };
 

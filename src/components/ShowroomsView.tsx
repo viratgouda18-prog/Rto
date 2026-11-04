@@ -17,6 +17,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { isValidIndianMobile } from '../utils/validators.ts';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const ShowroomsView: React.FC = () => {
   const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
@@ -41,17 +42,16 @@ export const ShowroomsView: React.FC = () => {
   const fetchShowrooms = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/showrooms');
-      if (!res.ok) throw new Error('Failed to load showrooms');
-      const data = await res.json();
-      setShowrooms(data);
+      const data = await fetchJson<any[]>('/api/showrooms', { fallback: [] });
+      setShowrooms(data || []);
 
       if (selectedEntityForView && selectedEntityForView.type === 'showroom') {
         openShowroomDetail(selectedEntityForView.id);
         setSelectedEntityForView(null);
       }
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchShowrooms error:', err);
+      showToast(err.message || 'Failed to load showrooms', 'error');
     } finally {
       setLoading(false);
     }
@@ -59,13 +59,11 @@ export const ShowroomsView: React.FC = () => {
 
   const openShowroomDetail = async (id: number | string) => {
     try {
-      const res = await fetch(`/api/showrooms/${id}`);
-      if (!res.ok) throw new Error('Failed to load showroom paperwork');
-      const data = await res.json();
+      const data = await fetchJson<any>(`/api/showrooms/${id}`);
       setActiveShowroomDetail(data);
       setSubTab('new');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to load showroom paperwork', 'error');
     }
   };
 
@@ -127,23 +125,20 @@ export const ShowroomsView: React.FC = () => {
       const url = editingShowroom ? `/api/showrooms/${editingShowroom.id}` : '/api/showrooms';
       const method = editingShowroom ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await fetchJson<any>(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save showroom');
-
       showToast(editingShowroom ? 'Showroom updated' : 'Showroom added successfully', 'success');
       setShowModal(false);
       fetchShowrooms();
-      if (activeShowroomDetail && activeShowroomDetail.id === (editingShowroom?.id || data.id)) {
-        openShowroomDetail(editingShowroom?.id || data.id);
+      if (activeShowroomDetail && activeShowroomDetail.id === (editingShowroom?.id || data?.id)) {
+        openShowroomDetail(editingShowroom?.id || data?.id);
       }
     } catch (err: any) {
-      setFormError(err.message);
+      setFormError(err.message || 'Failed to save showroom');
     } finally {
       setSaving(false);
     }
@@ -156,8 +151,7 @@ export const ShowroomsView: React.FC = () => {
       confirmText: 'Delete Showroom',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/showrooms/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete showroom');
+        await fetchJson(`/api/showrooms/${id}`, { method: 'DELETE' });
         showToast('Showroom deleted permanently', 'info');
         fetchShowrooms();
         if (activeShowroomDetail?.id === id) setActiveShowroomDetail(null);

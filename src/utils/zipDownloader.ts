@@ -3,6 +3,8 @@
  * for offline record keeping, regulatory audits, and physical file submissions.
  */
 
+import { fetchJson } from './apiClient.ts';
+ 
 export interface BundleZipOptions {
   docIds: number[];
   entityType?: 'client' | 'vehicle' | 'tractor' | 'showroom' | 'case' | 'general';
@@ -20,18 +22,11 @@ export async function downloadDocumentsAsZip(options: BundleZipOptions): Promise
     throw new Error('Please select at least one document to bundle.');
   }
 
-  const res = await fetch('/api/documents/bundle', {
+  const data = await fetchJson<any>('/api/documents/bundle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
   });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to generate offline document ZIP bundle');
-  }
-
-  const data = await res.json();
 
   // Convert base64 to binary Blob and trigger browser download
   const byteCharacters = atob(data.zipBase64);

@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from 'lucide-react';
+import { fetchJson } from '../utils/apiClient.ts';
 
 export const ExchangeCasesView: React.FC = () => {
   const { t, showToast, searchQuery, confirm } = useApp();
@@ -51,19 +52,20 @@ export const ExchangeCasesView: React.FC = () => {
   const fetchExchangeData = async () => {
     setLoading(true);
     try {
-      const [exRes, cRes, sRes, vRes] = await Promise.all([
-        fetch('/api/exchange-cases'),
-        fetch('/api/clients?status=active'),
-        fetch('/api/showrooms'),
-        fetch('/api/vehicles'),
+      const [exCases, clientsList, showroomsList, vehiclesList] = await Promise.all([
+        fetchJson<any[]>('/api/exchange-cases', { fallback: [] }),
+        fetchJson<any[]>('/api/clients?status=active', { fallback: [] }),
+        fetchJson<any[]>('/api/showrooms', { fallback: [] }),
+        fetchJson<any[]>('/api/vehicles', { fallback: [] }),
       ]);
 
-      if (exRes.ok) setExchangeCases(await exRes.json());
-      if (cRes.ok) setClients(await cRes.json());
-      if (sRes.ok) setShowrooms(await sRes.json());
-      if (vRes.ok) setVehicles(await vRes.json());
+      setExchangeCases(exCases || []);
+      setClients(clientsList || []);
+      setShowrooms(showroomsList || []);
+      setVehicles(vehiclesList || []);
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('fetchExchangeData error:', err);
+      showToast(err.message || 'Unable to sync exchange cases at this moment', 'error');
     } finally {
       setLoading(false);
     }
@@ -118,8 +120,7 @@ export const ExchangeCasesView: React.FC = () => {
       confirmText: 'Delete Case',
       variant: 'danger',
       onConfirm: async () => {
-        const res = await fetch(`/api/exchange-cases/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete exchange case');
+        await fetchJson(`/api/exchange-cases/${id}`, { method: 'DELETE' });
         showToast('Exchange case deleted', 'info');
         fetchExchangeData();
       },
@@ -187,20 +188,17 @@ export const ExchangeCasesView: React.FC = () => {
       const url = editingCase ? `/api/exchange-cases/${editingCase.id}` : '/api/exchange-cases';
       const method = editingCase ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      await fetchJson(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save exchange case');
-
       showToast(editingCase ? 'Exchange case updated' : 'Exchange case created successfully', 'success');
       setShowModal(false);
       fetchExchangeData();
     } catch (err: any) {
-      setFormError(err.message);
+      setFormError(err.message || 'Failed to save exchange case');
     } finally {
       setSaving(false);
     }
