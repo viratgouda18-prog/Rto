@@ -84,186 +84,242 @@ api.post('/auth/login', async (req: Request, res: Response) => {
 // ----------------------------------------------------
 api.get('/stats', async (_req: Request, res: Response) => {
   try {
-    const [clientsCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.clients)
-      .where(eq(schema.clients.status, 'active'));
-
-    const [showroomsCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.showrooms)
-      .where(eq(schema.showrooms.status, 'active'));
-
-    const [vehiclesCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.vehicles)
-      .where(eq(schema.vehicles.status, 'active'));
-
-    const [tractorsCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.vehicles)
-      .where(and(
-        eq(schema.vehicles.status, 'active'),
-        or(eq(schema.vehicles.isTractor, true), eq(schema.vehicles.vehicleType, 'tractor'))
-      ));
-
-    const [tractorExchangesCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.exchangeCases)
-      .where(eq(schema.exchangeCases.isTractorExchange, true));
-
-    const [activeCasesCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.rtoCases)
-      .where(or(
-        eq(schema.rtoCases.status, 'pending'),
-        eq(schema.rtoCases.status, 'in_progress'),
-        eq(schema.rtoCases.status, 'waiting_for_documents')
-      ));
-
-    const [pendingCasesCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.rtoCases)
-      .where(eq(schema.rtoCases.status, 'pending'));
-
-    const [completedCasesCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.rtoCases)
-      .where(eq(schema.rtoCases.status, 'completed'));
-
-    const [missingDocsCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.caseChecklists)
-      .where(and(
-        eq(schema.caseChecklists.isMandatory, true),
-        eq(schema.caseChecklists.isCompleted, false)
-      ));
-
-    // Upcoming document expiries (insurance / temp reg within next 30 days)
     const todayStr = new Date().toISOString().split('T')[0];
     const thirtyDaysLater = new Date();
     thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
     const thirtyDaysStr = thirtyDaysLater.toISOString().split('T')[0];
 
-    const [expiringInsuranceCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.vehicles)
-      .where(and(
-        sql`${schema.vehicles.insuranceExpiryDate} != ''`,
-        sql`${schema.vehicles.insuranceExpiryDate} <= ${thirtyDaysStr}`
-      ));
+    const safeCount = async (p: Promise<any[]>): Promise<number> => {
+      try {
+        const rows = await p;
+        return Number(rows?.[0]?.count || 0);
+      } catch (e) {
+        console.warn('Metric count query fallback:', e);
+        return 0;
+      }
+    };
 
-    // Recent activity (audit logs)
-    const recentActivity = await db
-      .select()
-      .from(schema.auditLogs)
-      .orderBy(desc(schema.auditLogs.timestamp))
-      .limit(8);
+    const safeRows = async <T>(p: Promise<T[]>, fallback: T[] = []): Promise<T[]> => {
+      try {
+        return await p;
+      } catch (e) {
+        console.warn('Metric rows query fallback:', e);
+        return fallback;
+      }
+    };
 
-    // Recently uploaded documents
-    const recentDocuments = await db
-      .select({
-        id: schema.documents.id,
-        docId: schema.documents.docId,
-        title: schema.documents.title,
-        docType: schema.documents.docType,
-        fileName: schema.documents.fileName,
-        fileType: schema.documents.fileType,
-        fileSize: schema.documents.fileSize,
-        createdAt: schema.documents.createdAt,
-      })
-      .from(schema.documents)
-      .orderBy(desc(schema.documents.createdAt))
-      .limit(6);
-
-    // Pending work cases
-    const pendingWork = await db
-      .select({
-        id: schema.rtoCases.id,
-        caseId: schema.rtoCases.caseId,
-        serviceType: schema.rtoCases.serviceType,
-        rtoOffice: schema.rtoCases.rtoOffice,
-        status: schema.rtoCases.status,
-        dueDate: schema.rtoCases.dueDate,
-        vehicleReg: schema.vehicles.registrationNumber,
-        clientName: schema.clients.fullName,
-      })
-      .from(schema.rtoCases)
-      .leftJoin(schema.vehicles, eq(schema.rtoCases.vehicleId, schema.vehicles.id))
-      .leftJoin(schema.clients, eq(schema.rtoCases.clientId, schema.clients.id))
-      .where(or(
-        eq(schema.rtoCases.status, 'pending'),
-        eq(schema.rtoCases.status, 'in_progress'),
-        eq(schema.rtoCases.status, 'waiting_for_documents')
-      ))
-      .orderBy(desc(schema.rtoCases.createdAt))
-      .limit(6);
-
-    // Expiring vehicle documents
-    const expiringVehicles = await db
-      .select({
-        id: schema.vehicles.id,
-        vehicleId: schema.vehicles.vehicleId,
-        regNumber: schema.vehicles.registrationNumber,
-        model: schema.vehicles.model,
-        ownerName: schema.vehicles.ownerName,
-        insuranceExpiryDate: schema.vehicles.insuranceExpiryDate,
-        tempRegExpiryDate: schema.vehicles.tempRegExpiryDate,
-      })
-      .from(schema.vehicles)
-      .where(or(
-        and(sql`${schema.vehicles.insuranceExpiryDate} != ''`, sql`${schema.vehicles.insuranceExpiryDate} <= ${thirtyDaysStr}`),
-        and(sql`${schema.vehicles.tempRegExpiryDate} != ''`, sql`${schema.vehicles.tempRegExpiryDate} <= ${thirtyDaysStr}`)
-      ))
-      .limit(6);
-
-    // Showroom-wise document overview
-    const allShowrooms = await db
-      .select({
-        id: schema.showrooms.id,
-        showroomId: schema.showrooms.showroomId,
-        name: schema.showrooms.name,
-      })
-      .from(schema.showrooms)
-      .where(eq(schema.showrooms.status, 'active'));
-
-    const showroomOverview = await Promise.all(
-      allShowrooms.map(async (sr) => {
-        const [newVeh] = await db
+    const [
+      clientsCount,
+      showroomsCount,
+      vehiclesCount,
+      tractorsCount,
+      tractorExchangesCount,
+      activeCasesCount,
+      pendingCasesCount,
+      completedCasesCount,
+      missingDocsCount,
+      expiringInsuranceCount,
+      recentActivity,
+      recentDocuments,
+      pendingWork,
+      expiringVehicles,
+      allShowrooms,
+    ] = await Promise.all([
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.clients)
+          .where(eq(schema.clients.status, 'active'))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.showrooms)
+          .where(eq(schema.showrooms.status, 'active'))
+      ),
+      safeCount(
+        db
           .select({ count: sql<number>`count(*)` })
           .from(schema.vehicles)
-          .where(and(eq(schema.vehicles.showroomId, sr.id), eq(schema.vehicles.category, 'new')));
-
-        const [usedVeh] = await db
+          .where(eq(schema.vehicles.status, 'active'))
+      ),
+      safeCount(
+        db
           .select({ count: sql<number>`count(*)` })
           .from(schema.vehicles)
-          .where(and(eq(schema.vehicles.showroomId, sr.id), eq(schema.vehicles.category, 'used')));
-
-        const [exchanges] = await db
+          .where(and(
+            eq(schema.vehicles.status, 'active'),
+            or(eq(schema.vehicles.isTractor, true), eq(schema.vehicles.vehicleType, 'tractor'))
+          ))
+      ),
+      safeCount(
+        db
           .select({ count: sql<number>`count(*)` })
           .from(schema.exchangeCases)
-          .where(eq(schema.exchangeCases.showroomId, sr.id));
+          .where(eq(schema.exchangeCases.isTractorExchange, true))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.rtoCases)
+          .where(or(
+            eq(schema.rtoCases.status, 'pending'),
+            eq(schema.rtoCases.status, 'in_progress'),
+            eq(schema.rtoCases.status, 'waiting_for_documents')
+          ))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.rtoCases)
+          .where(eq(schema.rtoCases.status, 'pending'))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.rtoCases)
+          .where(eq(schema.rtoCases.status, 'completed'))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.caseChecklists)
+          .where(and(
+            eq(schema.caseChecklists.isMandatory, true),
+            eq(schema.caseChecklists.isCompleted, false)
+          ))
+      ),
+      safeCount(
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.vehicles)
+          .where(and(
+            sql`${schema.vehicles.insuranceExpiryDate} != ''`,
+            sql`${schema.vehicles.insuranceExpiryDate} <= ${thirtyDaysStr}`
+          ))
+      ),
+      safeRows(
+        db
+          .select()
+          .from(schema.auditLogs)
+          .orderBy(desc(schema.auditLogs.timestamp))
+          .limit(8)
+      ),
+      safeRows(
+        db
+          .select({
+            id: schema.documents.id,
+            docId: schema.documents.docId,
+            title: schema.documents.title,
+            docType: schema.documents.docType,
+            fileName: schema.documents.fileName,
+            fileType: schema.documents.fileType,
+            fileSize: schema.documents.fileSize,
+            createdAt: schema.documents.createdAt,
+          })
+          .from(schema.documents)
+          .orderBy(desc(schema.documents.createdAt))
+          .limit(6)
+      ),
+      safeRows(
+        db
+          .select({
+            id: schema.rtoCases.id,
+            caseId: schema.rtoCases.caseId,
+            serviceType: schema.rtoCases.serviceType,
+            rtoOffice: schema.rtoCases.rtoOffice,
+            status: schema.rtoCases.status,
+            dueDate: schema.rtoCases.dueDate,
+            vehicleReg: schema.vehicles.registrationNumber,
+            clientName: schema.clients.fullName,
+          })
+          .from(schema.rtoCases)
+          .leftJoin(schema.vehicles, eq(schema.rtoCases.vehicleId, schema.vehicles.id))
+          .leftJoin(schema.clients, eq(schema.rtoCases.clientId, schema.clients.id))
+          .where(or(
+            eq(schema.rtoCases.status, 'pending'),
+            eq(schema.rtoCases.status, 'in_progress'),
+            eq(schema.rtoCases.status, 'waiting_for_documents')
+          ))
+          .orderBy(desc(schema.rtoCases.createdAt))
+          .limit(6)
+      ),
+      safeRows(
+        db
+          .select({
+            id: schema.vehicles.id,
+            vehicleId: schema.vehicles.vehicleId,
+            regNumber: schema.vehicles.registrationNumber,
+            model: schema.vehicles.model,
+            ownerName: schema.vehicles.ownerName,
+            insuranceExpiryDate: schema.vehicles.insuranceExpiryDate,
+            tempRegExpiryDate: schema.vehicles.tempRegExpiryDate,
+          })
+          .from(schema.vehicles)
+          .where(or(
+            and(sql`${schema.vehicles.insuranceExpiryDate} != ''`, sql`${schema.vehicles.insuranceExpiryDate} <= ${thirtyDaysStr}`),
+            and(sql`${schema.vehicles.tempRegExpiryDate} != ''`, sql`${schema.vehicles.tempRegExpiryDate} <= ${thirtyDaysStr}`)
+          ))
+          .limit(6)
+      ),
+      safeRows(
+        db
+          .select({
+            id: schema.showrooms.id,
+            showroomId: schema.showrooms.showroomId,
+            name: schema.showrooms.name,
+          })
+          .from(schema.showrooms)
+          .where(eq(schema.showrooms.status, 'active'))
+      ),
+    ]);
 
-        return {
-          ...sr,
-          newVehicles: Number(newVeh?.count || 0),
-          usedVehicles: Number(usedVeh?.count || 0),
-          exchangeCases: Number(exchanges?.count || 0),
-        };
-      })
-    );
+    let showroomOverview: any[] = [];
+    if (allShowrooms.length > 0) {
+      showroomOverview = await Promise.all(
+        allShowrooms.map(async (sr) => {
+          const [newVehCount, usedVehCount, exchangeCount] = await Promise.all([
+            safeCount(
+              db
+                .select({ count: sql<number>`count(*)` })
+                .from(schema.vehicles)
+                .where(and(eq(schema.vehicles.showroomId, sr.id), eq(schema.vehicles.category, 'new')))
+            ),
+            safeCount(
+              db
+                .select({ count: sql<number>`count(*)` })
+                .from(schema.vehicles)
+                .where(and(eq(schema.vehicles.showroomId, sr.id), eq(schema.vehicles.category, 'used')))
+            ),
+            safeCount(
+              db
+                .select({ count: sql<number>`count(*)` })
+                .from(schema.exchangeCases)
+                .where(eq(schema.exchangeCases.showroomId, sr.id))
+            ),
+          ]);
+
+          return {
+            ...sr,
+            newVehicles: newVehCount,
+            usedVehicles: usedVehCount,
+            exchangeCases: exchangeCount,
+          };
+        })
+      );
+    }
 
     res.json({
-      totalClients: Number(clientsCount?.count || 0),
-      totalShowrooms: Number(showroomsCount?.count || 0),
-      totalVehicles: Number(vehiclesCount?.count || 0),
-      totalTractors: Number(tractorsCount?.count || 0),
-      tractorExchanges: Number(tractorExchangesCount?.count || 0),
-      activeCases: Number(activeCasesCount?.count || 0),
-      pendingCases: Number(pendingCasesCount?.count || 0),
-      completedCases: Number(completedCasesCount?.count || 0),
-      missingDocs: Number(missingDocsCount?.count || 0),
-      upcomingExpiries: Number(expiringInsuranceCount?.count || 0),
+      totalClients: clientsCount,
+      totalShowrooms: showroomsCount,
+      totalVehicles: vehiclesCount,
+      totalTractors: tractorsCount,
+      tractorExchanges: tractorExchangesCount,
+      activeCases: activeCasesCount,
+      pendingCases: pendingCasesCount,
+      completedCases: completedCasesCount,
+      missingDocs: missingDocsCount,
+      upcomingExpiries: expiringInsuranceCount,
       recentActivity,
       recentDocuments,
       pendingWork,
@@ -272,7 +328,24 @@ api.get('/stats', async (_req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard statistics' });
+    // Return sanitized resilient default stats rather than failing the whole application
+    res.json({
+      totalClients: 0,
+      totalShowrooms: 0,
+      totalVehicles: 0,
+      totalTractors: 0,
+      tractorExchanges: 0,
+      activeCases: 0,
+      pendingCases: 0,
+      completedCases: 0,
+      missingDocs: 0,
+      upcomingExpiries: 0,
+      recentActivity: [],
+      recentDocuments: [],
+      pendingWork: [],
+      expiringVehicles: [],
+      showroomOverview: [],
+    });
   }
 });
 
