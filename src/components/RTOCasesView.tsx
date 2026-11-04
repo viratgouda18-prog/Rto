@@ -20,13 +20,16 @@ import {
   Eye,
   ChevronRight,
   ShieldCheck,
+  FileSpreadsheet,
+  Printer,
 } from 'lucide-react';
 import { RTO_SERVICES } from '../utils/checklists.ts';
 import { KARNATAKA_RTO_OFFICES } from '../utils/karnatakaRTO.ts';
 import { DocumentViewerModal } from './DocumentViewerModal.tsx';
+import { exportToCSV, exportToPDF } from '../utils/exporter.ts';
 
 export const RTOCasesView: React.FC = () => {
-  const { t, showToast, searchQuery, lang } = useApp();
+  const { t, showToast, searchQuery, lang, confirm } = useApp();
   const [cases, setCases] = useState<any[]>([]);
   const [tractors, setTractors] = useState<any[]>([]);
   const [showrooms, setShowrooms] = useState<any[]>([]);
@@ -111,19 +114,20 @@ export const RTOCasesView: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleDeleteCase = async (id: number) => {
-    if (!window.confirm('Are you sure you want to permanently delete this RTO Case and its legal checklist?')) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/rto-cases/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete RTO case');
-      showToast('RTO Case deleted permanently', 'info');
-      if (activeCaseDetail?.id === id) setActiveCaseDetail(null);
-      fetchCasesData();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDeleteCase = (id: number) => {
+    confirm({
+      title: 'Delete RTO Work Case',
+      message: 'Are you sure you want to permanently delete this RTO Case and its legal checklist? This action cannot be undone.',
+      confirmText: 'Delete Case',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/rto-cases/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete RTO case');
+        showToast('RTO Case deleted permanently', 'info');
+        if (activeCaseDetail?.id === id) setActiveCaseDetail(null);
+        fetchCasesData();
+      },
+    });
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -273,6 +277,112 @@ export const RTOCasesView: React.FC = () => {
     );
   });
 
+  const handleExportCSV = () => {
+    if (filteredCases.length === 0) {
+      showToast('No RTO cases to export for current filter', 'info');
+      return;
+    }
+
+    const headers = [
+      'Case ID',
+      'Service Type',
+      'Farmer / Owner Name',
+      'Owner Mobile',
+      'Tractor Reg / Status',
+      'Make / Model',
+      'Chassis Number',
+      'Karnataka RTO Office',
+      'Parivahan App No',
+      'Assigned Staff',
+      'Due Date',
+      'Checklist Progress',
+      'Case Status',
+    ];
+
+    const rows = filteredCases.map((c) => {
+      const completedCount = c.checklists?.filter((i: any) => i.isCompleted).length || 0;
+      const totalCount = c.checklists?.length || 0;
+      const progress = totalCount > 0 ? `${completedCount}/${totalCount} (${Math.round((completedCount / totalCount) * 100)}%)` : '0/0';
+
+      return [
+        c.caseId,
+        c.serviceType.replace(/_/g, ' ').toUpperCase(),
+        c.clientName || 'N/A',
+        c.clientPhone || 'N/A',
+        c.vehicleReg || 'Unregistered',
+        c.vehicleModel || 'N/A',
+        c.chassisNumber || 'N/A',
+        c.rtoOffice || 'N/A',
+        c.applicationNumber || 'Pending',
+        c.assignedStaff || 'N/A',
+        c.dueDate || 'N/A',
+        progress,
+        c.status.toUpperCase(),
+      ];
+    });
+
+    exportToCSV({
+      filename: `Karnataka_RTO_Cases_${new Date().toISOString().split('T')[0]}`,
+      headers,
+      rows,
+    });
+    showToast(`Exported ${filteredCases.length} RTO cases to CSV`, 'success');
+  };
+
+  const handleExportPDF = () => {
+    if (filteredCases.length === 0) {
+      showToast('No RTO cases to export for current filter', 'info');
+      return;
+    }
+
+    const headers = [
+      'Case ID',
+      'Service',
+      'Farmer / Owner',
+      'Tractor / Reg',
+      'RTO Office',
+      'App No',
+      'Staff',
+      'Due Date',
+      'Checklist',
+      'Status',
+    ];
+
+    const rows = filteredCases.map((c) => {
+      const completedCount = c.checklists?.filter((i: any) => i.isCompleted).length || 0;
+      const totalCount = c.checklists?.length || 0;
+      const progress = totalCount > 0 ? `${completedCount}/${totalCount}` : '-';
+
+      return [
+        c.caseId,
+        c.serviceType.replace(/_/g, ' ').toUpperCase(),
+        c.clientName || '-',
+        c.vehicleReg || c.vehicleModel || '-',
+        c.rtoOffice || '-',
+        c.applicationNumber || 'Pending',
+        c.assignedStaff || '-',
+        c.dueDate || '-',
+        progress,
+        c.status.toUpperCase(),
+      ];
+    });
+
+    exportToPDF({
+      filename: `Karnataka_RTO_Cases_${new Date().toISOString().split('T')[0]}`,
+      title: 'Karnataka RTO Work Cases Register',
+      subtitle: 'Official Tractors & Farm Machinery Parivahan Sewa Worklist',
+      headers,
+      rows,
+      metadata: {
+        'Status Filter': statusFilter === 'all' ? 'All Statuses' : statusFilter.toUpperCase(),
+        'Service Filter': serviceFilter === 'all' ? 'All Services' : serviceFilter.toUpperCase(),
+        'Total Filtered Records': filteredCases.length,
+        ...(searchQuery ? { 'Search Keyword': searchQuery } : {}),
+      },
+    });
+    showToast('PDF print preview opened', 'info');
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -286,7 +396,7 @@ export const RTOCasesView: React.FC = () => {
             End-to-end Karnataka RTO service tracking with auto-generated legal checklists
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Status filter */}
           <select
             value={statusFilter}
@@ -300,6 +410,25 @@ export const RTOCasesView: React.FC = () => {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
+
+          {/* Export Actions */}
+          <button
+            onClick={handleExportCSV}
+            title="Download filtered cases as CSV"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportPDF}
+            title="Print or Save filtered cases as PDF report"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+          >
+            <Printer className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Export PDF</span>
+          </button>
 
           <button
             onClick={openCreateModal}

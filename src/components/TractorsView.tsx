@@ -86,7 +86,7 @@ interface DocumentItem {
 }
 
 export const TractorsView: React.FC = () => {
-  const { t, lang, showToast } = useApp();
+  const { t, lang, showToast, confirm } = useApp();
   const [tractors, setTractors] = useState<VehicleRecord[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [showrooms, setShowrooms] = useState<ShowroomOption[]>([]);
@@ -297,26 +297,23 @@ export const TractorsView: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleDeleteTractor = async (tr: VehicleRecord) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to permanently delete tractor ${tr.vehicleId} (${tr.manufacturer} ${tr.model})? Associated documents and case entries will also be removed.`
-      )
-    ) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/vehicles/${tr.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete tractor record');
-      showToast(`Tractor ${tr.vehicleId} deleted successfully`, 'success');
-      fetchTractors();
-      if (selectedTractor?.id === tr.id) {
-        setShowDetailsModal(false);
-        setSelectedTractor(null);
-      }
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDeleteTractor = (tr: VehicleRecord) => {
+    confirm({
+      title: 'Delete Tractor Record',
+      message: `Are you sure you want to permanently delete tractor ${tr.vehicleId} (${tr.manufacturer} ${tr.model})? Associated documents and case entries will also be removed.`,
+      confirmText: 'Delete Tractor',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/vehicles/${tr.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete tractor record');
+        showToast(`Tractor ${tr.vehicleId} deleted successfully`, 'success');
+        fetchTractors();
+        if (selectedTractor?.id === tr.id) {
+          setShowDetailsModal(false);
+          setSelectedTractor(null);
+        }
+      },
+    });
   };
 
   const handleDeleteVaultDoc = async (docId: number) => {
@@ -1343,9 +1340,15 @@ export const TractorsView: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (window.confirm(`Are you sure you want to delete "${doc.title}"?`)) {
-                                handleDeleteVaultDoc(doc.id);
-                              }
+                              confirm({
+                                title: 'Delete Vault Document',
+                                message: `Are you sure you want to permanently delete "${doc.title}"?`,
+                                confirmText: 'Delete Document',
+                                variant: 'danger',
+                                onConfirm: async () => {
+                                  await handleDeleteVaultDoc(doc.id);
+                                },
+                              });
                             }}
                             className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40"
                             title="Delete document"

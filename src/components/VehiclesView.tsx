@@ -26,7 +26,7 @@ import { getExpiryStatus, formatKarnatakaRegNumber } from '../utils/validators.t
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
 
 export const VehiclesView: React.FC = () => {
-  const { t, showToast, searchQuery, setActiveTab, selectedEntityForView, setSelectedEntityForView } = useApp();
+  const { t, showToast, searchQuery, setActiveTab, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [showrooms, setShowrooms] = useState<any[]>([]);
@@ -282,17 +282,20 @@ export const VehiclesView: React.FC = () => {
     }
   };
 
-  const handleArchive = async (id: number) => {
-    if (!window.confirm('Archive this vehicle record?')) return;
-    try {
-      const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to archive vehicle');
-      showToast('Vehicle archived', 'info');
-      fetchVehicles();
-      if (viewingVehicleDetail?.id === id) setViewingVehicleDetail(null);
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleArchive = (id: number) => {
+    confirm({
+      title: 'Archive / Delete Record',
+      message: 'Are you sure you want to delete/archive this machinery record and its associated documents?',
+      confirmText: 'Delete Record',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to archive vehicle');
+        showToast('Record deleted/archived', 'info');
+        fetchVehicles();
+        if (viewingVehicleDetail?.id === id) setViewingVehicleDetail(null);
+      },
+    });
   };
 
   // Upload document for a specific vehicle

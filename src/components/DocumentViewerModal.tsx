@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useApp } from '../context/AppContext.tsx';
 import {
   X,
   Download,
@@ -74,13 +75,21 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     }
   };
 
+  const { confirm } = useApp();
+
   const handleDelete = () => {
-    if (window.confirm(`Are you sure you want to permanently delete "${doc.title}"?`)) {
-      if (onDelete) {
-        onDelete(doc.id);
-      }
-      onClose();
-    }
+    confirm({
+      title: 'Delete Document',
+      message: `Are you sure you want to permanently delete "${doc.title}"?`,
+      confirmText: 'Delete Document',
+      variant: 'danger',
+      onConfirm: () => {
+        if (onDelete) {
+          onDelete(doc.id);
+        }
+        onClose();
+      },
+    });
   };
 
   return (

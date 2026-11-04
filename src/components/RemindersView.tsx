@@ -18,7 +18,7 @@ import {
 import { getExpiryStatus } from '../utils/validators.ts';
 
 export const RemindersView: React.FC = () => {
-  const { t, showToast } = useApp();
+  const { t, showToast, confirm } = useApp();
   const [reminders, setReminders] = useState<any[]>([]);
   const [tractors, setTractors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,16 +123,19 @@ export const RemindersView: React.FC = () => {
     }
   };
 
-  const handleDeleteReminder = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this reminder permanently?')) return;
-    try {
-      const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete reminder');
-      showToast('Reminder deleted', 'info');
-      fetchReminders();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDeleteReminder = (id: number) => {
+    confirm({
+      title: 'Delete Reminder Alert',
+      message: 'Are you sure you want to delete this reminder permanently?',
+      confirmText: 'Delete Reminder',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete reminder');
+        showToast('Reminder deleted', 'info');
+        fetchReminders();
+      },
+    });
   };
 
   const handleDismiss = async (id: number) => {

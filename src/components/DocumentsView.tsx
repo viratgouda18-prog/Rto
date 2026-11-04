@@ -22,12 +22,14 @@ import {
   Edit2,
   Trash2,
   Tractor,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
 import { DocumentViewerModal } from './DocumentViewerModal.tsx';
+import { exportToCSV, exportToPDF } from '../utils/exporter.ts';
 
 export const DocumentsView: React.FC = () => {
-  const { t, showToast, searchQuery } = useApp();
+  const { t, showToast, searchQuery, confirm } = useApp();
   const [documents, setDocuments] = useState<any[]>([]);
   const [tractors, setTractors] = useState<any[]>([]);
   const [showrooms, setShowrooms] = useState<any[]>([]);
@@ -207,17 +209,20 @@ export const DocumentsView: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this document from the cabinet?')) return;
-    try {
-      const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete document');
-      showToast('Document removed', 'info');
-      fetchDocs();
-      if (viewingDoc?.id === id) setViewingDoc(null);
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDelete = (id: number) => {
+    confirm({
+      title: 'Delete Document',
+      message: 'Are you sure you want to delete this document from the vault? This action cannot be undone.',
+      confirmText: 'Delete Document',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete document');
+        showToast('Document removed', 'info');
+        fetchDocs();
+        if (viewingDoc?.id === id) setViewingDoc(null);
+      },
+    });
   };
 
   // Checkbox selection for ZIP bundle
@@ -316,6 +321,95 @@ export const DocumentsView: React.FC = () => {
     );
   });
 
+  const handleExportCSV = () => {
+    if (filteredDocs.length === 0) {
+      showToast('No documents to export for current filter', 'info');
+      return;
+    }
+
+    const headers = [
+      'Doc ID',
+      'Document Title',
+      'Type',
+      'Farmer / Owner',
+      'Tractor Reg',
+      'Showroom / Dealer',
+      'File Name',
+      'File Type',
+      'Size (KB)',
+      'Upload Date',
+      'OCR Verified',
+      'Tags',
+    ];
+
+    const rows = filteredDocs.map((d) => [
+      d.id,
+      d.title,
+      d.docType.toUpperCase(),
+      d.clientName || 'N/A',
+      d.vehicleReg || 'N/A',
+      d.showroomName || 'N/A',
+      d.fileName,
+      d.fileType,
+      d.fileSize ? Math.round(d.fileSize / 1024) : 'N/A',
+      new Date(d.createdAt).toLocaleDateString(),
+      d.ocrVerified ? 'YES' : 'NO',
+      d.tags || '',
+    ]);
+
+    exportToCSV({
+      filename: `Karnataka_RTO_Documents_${new Date().toISOString().split('T')[0]}`,
+      headers,
+      rows,
+    });
+    showToast(`Exported ${filteredDocs.length} documents index to CSV`, 'success');
+  };
+
+  const handleExportPDF = () => {
+    if (filteredDocs.length === 0) {
+      showToast('No documents to export for current filter', 'info');
+      return;
+    }
+
+    const headers = [
+      'ID',
+      'Title',
+      'Type',
+      'Farmer Name',
+      'Tractor Reg',
+      'Showroom / Dealership',
+      'File Name',
+      'Upload Date',
+      'OCR',
+    ];
+
+    const rows = filteredDocs.map((d) => [
+      d.id,
+      d.title,
+      d.docType.toUpperCase(),
+      d.clientName || '-',
+      d.vehicleReg || '-',
+      d.showroomName || '-',
+      d.fileName,
+      new Date(d.createdAt).toLocaleDateString(),
+      d.ocrVerified ? 'VERIFIED' : 'PENDING',
+    ]);
+
+    exportToPDF({
+      filename: `Karnataka_RTO_Documents_${new Date().toISOString().split('T')[0]}`,
+      title: 'Karnataka RTO Documents Cabinet Index',
+      subtitle: 'Official Tractor & Agricultural Machinery Document Vault Index',
+      headers,
+      rows,
+      metadata: {
+        'Document Type Filter': docTypeFilter === 'all' ? 'All Types' : docTypeFilter.toUpperCase(),
+        'Total Filtered Files': filteredDocs.length,
+        ...(searchQuery ? { 'Search Keyword': searchQuery } : {}),
+      },
+    });
+    showToast('PDF print preview opened', 'info');
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -341,6 +435,25 @@ export const DocumentsView: React.FC = () => {
               Download Bundle ({selectedDocIds.length} Selected)
             </button>
           )}
+
+          {/* Export Actions */}
+          <button
+            onClick={handleExportCSV}
+            title="Download documents list as CSV"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportPDF}
+            title="Print or Save documents index as PDF"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+          >
+            <Printer className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Export PDF</span>
+          </button>
 
           {/* Camera Capture shortcut */}
           <button

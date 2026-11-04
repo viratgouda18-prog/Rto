@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const ExchangeCasesView: React.FC = () => {
-  const { t, showToast, searchQuery } = useApp();
+  const { t, showToast, searchQuery, confirm } = useApp();
   const [exchangeCases, setExchangeCases] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [showrooms, setShowrooms] = useState<any[]>([]);
@@ -111,16 +111,19 @@ export const ExchangeCasesView: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleDeleteCase = async (id: number) => {
-    if (!window.confirm('Are you sure you want to permanently delete this exchange case?')) return;
-    try {
-      const res = await fetch(`/api/exchange-cases/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete exchange case');
-      showToast('Exchange case deleted', 'info');
-      fetchExchangeData();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDeleteCase = (id: number) => {
+    confirm({
+      title: 'Delete Exchange Case',
+      message: 'Are you sure you want to permanently delete this exchange case? This action cannot be undone.',
+      confirmText: 'Delete Case',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/exchange-cases/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete exchange case');
+        showToast('Exchange case deleted', 'info');
+        fetchExchangeData();
+      },
+    });
   };
 
   const handleOldVehicleChange = (vId: string) => {

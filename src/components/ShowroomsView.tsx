@@ -19,7 +19,7 @@ import {
 import { isValidIndianMobile } from '../utils/validators.ts';
 
 export const ShowroomsView: React.FC = () => {
-  const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView } = useApp();
+  const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
   const [showrooms, setShowrooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -149,17 +149,20 @@ export const ShowroomsView: React.FC = () => {
     }
   };
 
-  const handleDeleteShowroom = async (id: number) => {
-    if (!window.confirm('Are you sure you want to permanently delete this dealership / showroom?')) return;
-    try {
-      const res = await fetch(`/api/showrooms/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete showroom');
-      showToast('Showroom deleted permanently', 'info');
-      fetchShowrooms();
-      if (activeShowroomDetail?.id === id) setActiveShowroomDetail(null);
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleDeleteShowroom = (id: number) => {
+    confirm({
+      title: 'Delete Dealership / Showroom',
+      message: 'Are you sure you want to permanently delete this dealership / showroom? Associated inventory linkages will be unassigned.',
+      confirmText: 'Delete Showroom',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/showrooms/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete showroom');
+        showToast('Showroom deleted permanently', 'info');
+        fetchShowrooms();
+        if (activeShowroomDetail?.id === id) setActiveShowroomDetail(null);
+      },
+    });
   };
 
   const filteredShowrooms = showrooms.filter((sr) => {
@@ -226,7 +229,7 @@ export const ShowroomsView: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <Car className="w-3 h-3" /> Automobile
+                          <Store className="w-3 h-3" /> Machinery Dealer
                         </>
                       )}
                     </span>
@@ -326,7 +329,7 @@ export const ShowroomsView: React.FC = () => {
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <Car className="w-4 h-4" />
+                <Tractor className="w-4 h-4" />
                 Category A: {t.showrooms.tabNewVehicles} ({activeShowroomDetail.newVehicles?.length || 0})
               </button>
               <button
@@ -337,7 +340,7 @@ export const ShowroomsView: React.FC = () => {
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <Car className="w-4 h-4" />
+                <Tractor className="w-4 h-4" />
                 Category B: {t.showrooms.tabUsedVehicles} ({activeShowroomDetail.usedVehicles?.length || 0})
               </button>
               <button
@@ -532,8 +535,8 @@ export const ShowroomsView: React.FC = () => {
                       onChange={() => setDealershipType('automobile')}
                       className="text-indigo-600 focus:ring-indigo-500"
                     />
-                    <Car className="w-4 h-4" />
-                    <span>Automobile Showroom</span>
+                    <Store className="w-4 h-4" />
+                    <span>Farm Equipment Showroom</span>
                   </label>
 
                   <label

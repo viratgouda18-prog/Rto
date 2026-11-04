@@ -1508,7 +1508,6 @@ api.put('/documents/:id', async (req: Request, res: Response) => {
         tags: tags !== undefined ? tags.trim() : doc.tags,
         notes: notes !== undefined ? notes.trim() : doc.notes,
         ocrVerified: ocrVerified !== undefined ? Boolean(ocrVerified) : doc.ocrVerified,
-        updatedAt: new Date(),
       })
       .where(eq(schema.documents.id, id))
       .returning();

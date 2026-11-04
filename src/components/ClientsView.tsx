@@ -26,7 +26,7 @@ import { isValidIndianMobile, maskAadhaar } from '../utils/validators.ts';
 import { downloadDocumentsAsZip } from '../utils/zipDownloader.ts';
 
 export const ClientsView: React.FC = () => {
-  const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView } = useApp();
+  const { t, showToast, searchQuery, selectedEntityForView, setSelectedEntityForView, confirm } = useApp();
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('active');
@@ -207,17 +207,20 @@ export const ClientsView: React.FC = () => {
     }
   };
 
-  const handleArchive = async (id: number) => {
-    if (!window.confirm(t.common.confirmDelete)) return;
-    try {
-      const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to archive client');
-      showToast('Client record archived', 'info');
-      fetchClients();
-      if (viewingProfile?.id === id) setViewingProfile(null);
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
+  const handleArchive = (id: number) => {
+    confirm({
+      title: 'Archive / Delete Farmer Profile',
+      message: 'Are you sure you want to archive or delete this farmer/client profile?',
+      confirmText: 'Delete Record',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to archive client');
+        showToast('Client record archived', 'info');
+        fetchClients();
+        if (viewingProfile?.id === id) setViewingProfile(null);
+      },
+    });
   };
 
   // Filter clients based on search
